@@ -138,5 +138,100 @@ PoC 단계 목적은 파이프라인 연결 확인이지 OCR 정확도 측정이
 | 서명란 제거 | ✅ |
 | 별지 분리 | ✅ |
 
-**다음 단계: RAG PoC**  
-상가건물 임대차보호법 청킹 → pgvector 임베딩 → 조항 입력 시 관련 법령 검색 확인
+
+
+---
+
+## Phase 0 — RAG PoC
+
+### 목표
+법령 청킹 → pgvector 임베딩 → 계약 조항 입력 시 관련 법령 검색 가능한지 확인
+
+### 통과 기준
+4개 쿼리 모두 의미적으로 맞는 조문이 1위로 검색되면 OK
+
+### 테스트 대상
+- 상가건물임대차보호법 36개 조문
+- 민법 임대차 조문
+- Gemini embedding-001 (3072차원), IVFFlat 인덱스
+
+### 결과
+4개 쿼리 모두 1위 정확히 검색 성공
+
+| 쿼리 | 1위 결과 | 유사도 |
+|------|---------|--------|
+| 보증금 반환 의무 | 제5조 보증금의 회수 | 0.747 |
+| 계약 갱신 요구권 | 제10조 계약갱신 요구 등 | 0.770 |
+| 임대료 인상 한도 | 제11조 차임 등의 증감청구권 | 0.711 |
+| 권리금 회수 방해 | 제10조의4 권리금 회수기회 보호 | 0.757 |
+
+---
+
+## Phase 0 — RAG PoC
+
+### 목표
+법령 청킹 → pgvector 임베딩 → 계약 조항 입력 시 관련 법령 검색 가능한지 확인
+
+### 통과 기준
+4개 쿼리 모두 의미적으로 맞는 조문이 1위로 검색되면 OK
+
+### 테스트 대상
+- 상가건물임대차보호법 36개 조문
+- 민법 임대차 조문
+- Gemini embedding-001 (3072차원), IVFFlat 인덱스
+
+### 결과
+4개 쿼리 모두 1위 정확히 검색 성공
+
+| 쿼리 | 1위 결과 | 유사도 |
+|------|---------|--------|
+| 보증금 반환 의무 | 제5조 보증금의 회수 | 0.747 |
+| 계약 갱신 요구권 | 제10조 계약갱신 요구 등 | 0.770 |
+| 임대료 인상 한도 | 제11조 차임 등의 증감청구권 | 0.711 |
+| 권리금 회수 방해 | 제10조의4 권리금 회수기회 보호 | 0.757 |
+
+---
+
+## RAG PoC 과정에서 부딪힌 문제들
+
+### 문제 1. 모델명 오류
+`models/embedding-001` → 404 NOT_FOUND 발생
+
+**해결:** `gemini-embedding-001` 로 수정 (embed_laws.py와 동일하게 맞춤)
+
+### 문제 2. async 함수 내 동기 블로킹
+`async def search_legal_context` 내부에서 psycopg2(동기), Gemini 클라이언트(동기)를  
+직접 호출해 이벤트 루프 블로킹 발생
+
+**해결:** 동기 로직을 `_embed`, `_query_db`로 분리 후 `asyncio.to_thread()`로 위임
+asyncpg(비동기 드라이버)로 교체하는 방법도 있지만, PoC 단계에서 psycopg2를  
+걷어내는 건 오버엔지니어링이라 판단. to_thread로 블로킹만 해소하고 드라이버는 유지.
+```python
+async def search_legal_context(self, text: str, top_k: int = TOP_K) -> list[dict]:
+    embedding = await asyncio.to_thread(self._embed, text)
+    return await asyncio.to_thread(self._query_db, embedding, top_k)
+```
+
+---
+
+## 설계 결정 기록 (RAG)
+
+**RETRIEVAL_DOCUMENT / RETRIEVAL_QUERY 분리 이유**  
+Gemini 임베딩은 저장 시 `RETRIEVAL_DOCUMENT`, 검색 시 `RETRIEVAL_QUERY`를 쌍으로 써야  
+비대칭 검색(asymmetric retrieval) 품질이 올라감.  
+embed_laws.py에서 DOCUMENT로 적재했으므로 rag_service.py 쿼리 시 QUERY 사용.
+
+---
+
+## RAG PoC 통과
+
+| 항목 | 결과 |
+|---|---|
+| 보증금 반환 의무 검색 | ✅ |
+| 계약 갱신 요구권 검색 | ✅ |
+| 임대료 인상 한도 검색 | ✅ |
+| 권리금 회수 방해 검색 | ✅ |
+| 유사도 범위 | 0.69 ~ 0.77 |
+
+**다음 단계: LLM 분석 구현**  
+RAG 검색 결과 + 계약 조항 → GPT-4o로 리스크 판단

@@ -1,0 +1,157 @@
+# 계약지킴이 개발 체크리스트
+
+> 마지막 업데이트: 2026-04-01
+
+---
+
+## Phase 0 — PoC 기술 검증
+
+> 핵심 리스크(OCR 정확도, RAG 품질)를 먼저 검증한다.  
+> 이게 안 되면 뒤가 다 의미없음.
+
+### 환경 세팅
+- [x] git init + .gitignore + 디렉토리 구조 생성
+- [x] docker-compose.yml 작성 (PostgreSQL+pgvector, Redis)
+- [x] FastAPI 프로젝트 초기화 (requirements.txt, main.py, 골격 파일)
+- [x] DB/Redis 실행 확인 (`docker compose up -d`)
+- [x] FastAPI 서버 실행 확인 (`uvicorn app.main:app --reload`)
+- [x] `/health` 엔드포인트 응답 확인
+
+### OCR PoC
+- [x] 샘플 계약서 PDF 준비 (표준계약서 v1, v2)
+- [x] pdfplumber로 텍스트 추출 (`ocr_service.py` 구현)
+- [x] 노이즈 제거 (`clean_text()` — 페이지 번호, 서명란, 별지 분리)
+- [x] 조항 단위 파싱 (`parse_articles()` — 제N조 패턴)
+- [x] 법령 참조문 오탐 제거
+- [x] OCR PoC 통과 기준 확인 (12개 조항 파싱 성공)
+- [x] PoC 결과 문서화 (`docs/poc-ocr.md`)
+
+### RAG PoC
+- [x] 국가법령정보센터 API 키 발급
+- [x] `fetch_laws.py` 작성 — 상가건물임대차보호법 + 민법 조문 수집
+- [x] `all_laws.json` 생성 확인
+- [x] `embed_laws.py` 작성 — 법령 조문 청킹 → 로컬 임베딩 → pgvector 저장
+     ❌<개정 2020.9.29>, <신설 2020.9.29> 같은 개정 태그 노이즈 가능성!!!
+- [x] pgvector 테이블 생성 확인 (`law_chunks` 테이블)
+- [x] `rag_service.py` 실제 구현 — 계약서 조항 입력 → 관련 법령 검색
+- [x] `test_rag.py` 작성 — 검색 결과 품질 확인
+- [x] RAG PoC 통과 기준 확인
+  - [x] "임대료 월 300만원" 입력 → 상가임대차보호법 제11조 검색됨
+  - [x] "계약 기간 1년" 입력 → 제9조(임대차기간) 검색됨
+  - [x] "권리금" 입력 → 제10조의3~10조의7 검색됨
+- [x] PoC 결과 문서화 (`docs/poc-rag.md`)
+
+---
+
+## Phase 1 — FastAPI AI 서버 MVP
+
+> PoC 코드를 프로덕션 수준으로 정리한다.  
+> 엔드포인트 1개(`POST /analyze`)만 완성하면 됨.
+
+### LLM 연동
+- [ ] OpenAI API 키 발급 또는 Gemini API 무료 티어 설정
+- [ ] `llm_service.py` 실제 구현
+  - [ ] 프롬프트 설계 (계약서 조항 + 관련 법령 → 위험도 분석)
+  - [ ] LLM 응답을 `ArticleAnalysis` 스키마로 파싱
+  - [ ] JSON 모드 강제 (`response_format` 설정)
+- [ ] 프롬프트 튜닝 (실제 계약서 3개 조항으로 품질 검증)
+
+### 파이프라인 완성
+- [ ] OCR → RAG → LLM 파이프라인 end-to-end 연결
+- [ ] `POST /analyze` 엔드포인트 완성
+  - [ ] PDF 업로드 → 분석 결과 JSON 반환
+  - [ ] 에러 처리 (OCR 실패, LLM 타임아웃 등)
+- [ ] Redis 캐싱 적용 (동일 계약서 재분석 시 LLM 호출 스킵)
+- [ ] 어머니 실제 계약서로 end-to-end 테스트
+
+### 코드 정리
+- [ ] `app/core/config.py` 환경변수 정리 (`.env` 파일)
+- [ ] 전역 예외 핸들러 추가
+- [ ] API 문서 확인 (`/docs` Swagger UI)
+- [ ] Dockerfile 운영용으로 수정 (`--reload` 제거)
+
+---
+
+## Phase 2 — Spring Boot 백엔드 연동
+
+> 인증, 계약 이력 저장, FastAPI 연동.
+
+### 프로젝트 초기화
+- [ ] Spring Initializr로 프로젝트 생성
+  - [ ] 의존성: Spring Security, JPA, WebFlux, Validation, S3
+- [ ] `application.yml` 기본 설정 (DB, Redis, S3)
+- [ ] PostgreSQL 연결 확인
+
+### 인증
+- [ ] 회원가입 / 로그인 API
+- [ ] JWT 발급 및 검증 필터
+- [ ] Spring Security 설정
+
+### 계약 이력 CRUD
+- [ ] `Contract` 엔티티 설계
+- [ ] 계약서 업로드 → S3 저장 → DB 이력 저장
+- [ ] 분석 이력 조회 API
+
+### FastAPI 연동
+- [ ] `WebClient`로 FastAPI `POST /analyze` 호출
+- [ ] 비동기 처리 (분석 시간이 길어서 즉시 응답 안 됨)
+  - [ ] 분석 요청 → `202 Accepted` 즉시 반환
+  - [ ] 분석 완료 후 DB 저장 + FCM 알림
+- [ ] JWT 검증 공유 전략 결정
+  - [ ] 옵션 A: Spring Boot가 JWT 검증 후 user_id만 FastAPI에 전달
+  - [ ] 옵션 B: FastAPI도 JWT 직접 검증 (공개키 공유)
+
+### 알림
+- [ ] `Contract` 만료일 필드 추가
+- [ ] Spring Batch 잡 작성 — 만료 30일 전 알림 발송
+- [ ] FCM 연동
+
+---
+
+## Phase 3 — 프론트엔드 + 배포
+
+> 실사용자가 쓸 수 있는 상태로 만든다.
+
+### 프론트엔드 (미정 — React 예정)
+- [ ] 기술 스택 확정
+- [ ] 계약서 업로드 화면
+- [ ] 분석 결과 리포트 화면 (조항별 위험도 시각화)
+- [ ] 계약 이력 목록 화면
+- [ ] 반응형 (모바일 우선 — 실사용자가 핸드폰으로 접근)
+
+### AWS 배포
+- [ ] EC2 인스턴스 설정
+- [ ] RDS PostgreSQL 생성 + pgvector 익스텐션 활성화
+- [ ] S3 버킷 생성 + IAM 권한 설정
+- [ ] ElastiCache Redis 설정
+- [ ] 도메인 + HTTPS 설정
+
+### CI/CD
+- [ ] GitHub Actions 워크플로우 작성
+  - [ ] PR → 테스트 자동 실행
+  - [ ] main 브랜치 push → 자동 배포
+- [ ] Docker Compose → 운영 환경 분리
+
+---
+
+## Phase 4 — 실사용자 테스트 + 마무리
+
+- [ ] 어머니 실사용 테스트 (실제 계약서 업로드)
+- [ ] 피드백 반영
+- [ ] Clova OCR 연동 (핸드폰 촬영 이미지 대응)
+- [ ] 포트폴리오 README 작성
+- [ ] 개발 회고 작성 (설계 결정 이유, 트러블슈팅 기록)
+
+---
+
+## 현재 위치
+
+```
+Phase 0 ██████████░░░░░░░░░░  50% (OCR 완료 / RAG 진행 중)
+Phase 1 ░░░░░░░░░░░░░░░░░░░░   0%
+Phase 2 ░░░░░░░░░░░░░░░░░░░░   0%
+Phase 3 ░░░░░░░░░░░░░░░░░░░░   0%
+Phase 4 ░░░░░░░░░░░░░░░░░░░░   0%
+```
+
+**다음 할 일 → `embed_laws.py` 작성**
