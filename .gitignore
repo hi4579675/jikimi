@@ -36,3 +36,11 @@ logs/
 
 # Docker
 *.override.yml
+
+
+# AI Service - generated outputs
+ai-service/scripts/output/
+ai-service/python
+
+# Generated files
+*.pdf
