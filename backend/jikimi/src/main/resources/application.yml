@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: jikimi-backend
+
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8080
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration-ms: ${JWT_EXPIRATION_MS}
+
+ai-service:
+  base-url: ${AI_SERVER_URL:http://localhost:8000}
+  webclient:
+    connect-timeout: 5000
+    read-timeout: 60000
+    write-timeout: 10000
+
+logging:
+  level:
+    com.jikimi: DEBUG
+    org.springframework.security: INFO
