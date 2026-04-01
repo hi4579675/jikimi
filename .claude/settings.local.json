@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /d/jikimi/ai-service -type f -name *.py -o -name *.txt -o -name Dockerfile)"
+    ]
+  }
+}
