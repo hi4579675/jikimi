@@ -25,3 +25,5 @@ redis==5.0.4
 # Misc
 python-dotenv==1.0.1
 rank-bm25==0.2.2          # BM25 sparse search
+
+google-genai==0.8.0

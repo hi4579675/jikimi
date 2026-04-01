@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     openai_api_key: str
 
     # PostgreSQL
-    database_url: str
+    database_url: str = "postgresql://jikimi:jikimi1234@localhost:5432/jikimi"
     postgres_db: str = "jikimi"
     postgres_user: str = "jikimi"
     postgres_password: str = "jikimi1234"
@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     aws_s3_bucket: str = "jikimi-contracts"
     aws_region: str = "ap-northeast-2"
 
+    law_api_key: str = "jikimi"
+    gemini_api_key: str = ""
+    
+    
     model_config = SettingsConfigDict(
         env_file="../.env",      # 로컬: 루트 .env 참조
         env_file_encoding="utf-8",
