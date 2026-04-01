@@ -1,20 +1,22 @@
 version: "3.9"
 
 services:
+  # ── 인프라 (항상 실행) ──────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg15
     container_name: jikimi_postgres
+    env_file: .env
     environment:
-      POSTGRES_DB: jikimi
-      POSTGRES_USER: jikimi
-      POSTGRES_PASSWORD: jikimi1234
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U jikimi -d jikimi"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,8 +34,41 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── 앱 서버 (--profile app 으로 선택 실행) ─────────────────
+  ai-service:
+    profiles: ["app"]
+    build: ./ai-service
+    container_name: jikimi_ai
+    env_file: .env
+    environment:
+      # Docker 내부에서는 localhost 대신 서비스명 사용
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  backend:
+    profiles: ["app"]
+    build: ./backend
+    container_name: jikimi_backend
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379
+      AI_SERVER_URL: http://ai-service:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
+
 volumes:
   postgres_data:
   redis_data:
-
-
