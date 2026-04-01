@@ -12,8 +12,6 @@ from app.services.llm_service import LlmService
 from app.services.ocr_service import OcrService
 from app.services.rag_service import RagService
 
-
-# 실제 경로: POST /api/v1/analyze
 router = APIRouter()
 
 # 서비스 인스턴스 생성
@@ -30,29 +28,43 @@ async def analyze_contract(file: UploadFile = File(...)) -> AnalyzeResponse:
     계약서 PDF를 받아서 독소 조항 분석 결과를 반환합니다.
 
     파이프라인:
-    1. OCR  → PDF에서 텍스트 추출
-    2. RAG  → 관련 법령 검색
-    3. LLM  → GPT-4o로 위험 조항 판단 및 리포트 생성
+    1. OCR       → PDF에서 텍스트 추출
+    2. 전처리    → 노이즈 제거 + 별지 분리 + 조항 파싱
+    3. RAG       → 관련 법령 검색
+    4. LLM       → GPT-4o로 위험 조항 판단 및 리포트 생성
     """
     try:
-        # ── STEP 1. OCR: PDF → 텍스트 추출 ───────────────────────
-        # TODO: pdfplumber로 텍스트 레이어 추출 (PoC 1단계)
-        # TODO: 텍스트 레이어 없으면 Clova OCR 호출 (2단계)
+        # ── STEP 1. OCR: PDF → 원본 텍스트 추출 ──────────────────
+        # pdfplumber로 텍스트 레이어 추출 (PoC 1단계)
+        # 텍스트 레이어 없으면 Clova OCR 호출 (2단계 예정)
         raw_text: str = await ocr_service.extract_text(file)
 
         if not raw_text:
             raise HTTPException(status_code=422, detail="계약서에서 텍스트를 추출할 수 없습니다.")
 
-        # ── STEP 2. RAG: 관련 법령 검색 ──────────────────────────
-        # TODO: 텍스트를 조항 단위로 파싱 (제1조, 제2조...)
-        # TODO: 각 조항에 대해 Hybrid RAG로 관련 법령 검색
-        legal_contexts = await rag_service.search_legal_context(raw_text)
+        # ── STEP 2. 전처리: 노이즈 제거 + 별지 분리 ──────────────
+        # 반드시 parse_articles() 전에 호출해야 함
+        # clean 안 된 텍스트로 파싱하면 서명란/별지가 마지막 조항에 붙어버림
+        # Spring으로 치면 서비스 레이어에서 전처리 후 다음 단계로 넘기는 것과 동일
+        contract_text, annex_text = ocr_service.clean_text(raw_text)
 
-        # ── STEP 3. LLM: GPT-4o 위험도 분석 ─────────────────────
-        # TODO: 조항 + 관련 법령을 GPT-4o에 넣고 위험도 판단 요청
-        # TODO: 응답을 ArticleAnalysis 스키마로 파싱
-        # TODO: contract_id, total_articles, high_risk_count 채우기
-        analysis_result: AnalyzeResponse = await llm_service.analyze(raw_text, legal_contexts)
+        # ── STEP 3. 조항 파싱: 텍스트 → 조항 리스트 ──────────────
+        # 줄 시작 "제N조(제목)" 패턴만 실제 조항으로 인식
+        # 법령 참조문(본문 중간의 제10조의4 등) 오탐 방지
+        articles: list[dict] = ocr_service.parse_articles(contract_text)
+
+        if not articles:
+            raise HTTPException(status_code=422, detail="계약서 조항을 찾을 수 없습니다. 계약서 형식을 확인해주세요.")
+
+        # ── STEP 4. RAG: 관련 법령 검색 ───────────────────────────
+        # 정제된 contract_text 기준으로 검색
+        # annex_text(별지)는 추후 RAG 지식베이스에 추가 예정
+        legal_contexts = await rag_service.search_legal_context(contract_text)
+
+        # ── STEP 5. LLM: GPT-4o 위험도 분석 ──────────────────────
+        # 조항 리스트 + 관련 법령을 GPT-4o에 넣고 위험도 판단 요청
+        # 응답을 AnalyzeResponse 스키마로 파싱
+        analysis_result: AnalyzeResponse = await llm_service.analyze(articles, legal_contexts)
 
         return analysis_result
 

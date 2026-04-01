@@ -3,6 +3,9 @@ from pydantic import BaseModel
 from typing import Optional
  
  
+class HealthResponse(BaseModel):
+    status: str
+    
 # ── 분석 요청 DTO ──────────────────────────────────────────────
 class AnalyzeRequest(BaseModel):
     # S3에 저장된 파일 키 (Spring Boot가 S3 업로드 후 FastAPI로 전달하는 값)
