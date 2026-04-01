@@ -100,8 +100,8 @@ curl -X POST http://localhost:8000/health
 
 ## 문서
 
-- [로드맵](docs/roadmap.md)
-- [아키텍처 결정 기록 (ADR)](docs/adr/)
-- [PoC 실험 결과](docs/poc/)
-- [API 명세](docs/api/analyze-contract.md)
-- [장애 대응 런북](docs/runbook.md)
+- [기획안](docs/기획안.md)
+- [아키텍처 결정 기록](docs/decisions.md)
+- [API 명세](docs/analyze-contract.md)
+- [테스트 로그](docs/testing-log.md)
+- [변경 이력](docs/changelog.md)
